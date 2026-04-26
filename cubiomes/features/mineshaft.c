@@ -1,0 +1,604 @@
+#include "mineshaft.h"
+
+#include <string.h>
+
+#include "piece.h"
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+typedef enum {
+    NORTH = 0,
+    EAST  = 1,
+    SOUTH = 2,
+    WEST  = 3
+} Direction;
+
+STRUCT(MineshaftPieceEnv) {
+    int mc;
+    Piece *list;
+    int *n;
+    uint64_t *rng;
+    int nmax;
+};
+
+static const char* dirName(Direction d) {
+    switch (d) {
+    case NORTH: return "NORTH";
+    case EAST:  return "EAST";
+    case SOUTH: return "SOUTH";
+    case WEST:  return "WEST";
+    default:    return "UNKNOWN";
+    }
+}
+
+static inline Piece* hasCollision(MineshaftPieceEnv *env, Pos3 b0, Pos3 b1) {
+    int i, n = *env->n;
+    for (i = 0; i < n; i++) {
+        Piece *q = env->list + i;
+        if (hasIntersection(q->bb0, q->bb1, b0, b1)) {
+            return q;
+        }
+    }
+    return NULL;
+}
+
+static void extendMineshaftPiece(MineshaftPieceEnv *env, Piece *piece);
+
+static void extendMineshaft(MineshaftPieceEnv *env, int x, int y, int z, Direction facing, int depth) {
+    if (depth > 8) return;
+    depth += 1;
+
+    if (IABS(x - env->list->bb0.x) > 80 || IABS(z - env->list->bb0.z) > 80) return;
+
+    int randomSelection = nextInt(env->rng, 100);
+    if (randomSelection >= 80) {
+        int y1 = 2 + 4 * (nextInt(env->rng, 4) == 0);
+        Pos3 bb0, bb1;
+        switch (facing) {
+        case NORTH: bb0 = (Pos3) {x + -1, y, z + -4}; bb1 = (Pos3) {x + 3, y + y1, z + 0}; break;
+        case EAST:  bb0 = (Pos3) {x + 0, y, z + -1}; bb1 = (Pos3) {x + 4, y + y1, z + 3}; break;
+        case SOUTH: bb0 = (Pos3) {x + -1, y, z + 0}; bb1 = (Pos3) {x + 3, y + y1, z + 4}; break;
+        case WEST:  bb0 = (Pos3) {x + -4, y, z + -1}; bb1 = (Pos3) {x + 0, y + y1, z + 3}; break;
+        default: UNREACHABLE();
+        }
+        if (!hasCollision(env, bb0, bb1)) {
+            Piece *p = env->list + (*env->n)++;
+            p->name = "MSCrossing";
+            p->pos = bb0;
+            p->bb0 = bb0;
+            p->bb1 = bb1;
+            p->rot = facing;
+            p->depth = depth;
+            p->type = MS_CROSSING;
+            p->next = NULL;
+            //printf("Cross x=%d y=%d z=%d dir=%s depth=%d\n", x, y, z, dirName(p->rot), p->depth-1);
+            extendMineshaftPiece(env, p);
+            return;
+        }
+    } else if (randomSelection >= 70) {
+        Pos3 bb0, bb1;
+        switch (facing) {
+        case NORTH: bb0 = (Pos3) {x + 0, y + -5, z + -8}; bb1 = (Pos3) {x + 2, y + 2, z + 0}; break;
+        case EAST:  bb0 = (Pos3) {x + 0, y + -5, z + 0}; bb1 = (Pos3) {x + 8, y + 2, z + 2}; break;
+        case SOUTH: bb0 = (Pos3) {x + 0, y + -5, z + 0}; bb1 = (Pos3) {x + 2, y + 2, z + 8}; break;
+        case WEST:  bb0 = (Pos3) {x + -8, y + -5, z + 0}; bb1 = (Pos3) {x + 0, y + 2, z + 2}; break;
+        default: UNREACHABLE();
+        }
+        if (!hasCollision(env, bb0, bb1)) {
+            Piece *p = env->list + (*env->n)++;
+            p->name = "MSStairs";
+            p->pos = bb0;
+            p->bb0 = bb0;
+            p->bb1 = bb1;
+            p->rot = facing;
+            p->depth = depth;
+            p->type = MS_STAIRS;
+            p->next = NULL;
+            //printf("Stairs x=%d y=%d z=%d dir=%s depth=%d\n", x, y, z, dirName(p->rot), p->depth-1);
+            extendMineshaftPiece(env, p);
+            return;
+        }
+    } else {
+        for (int corridorLength = nextInt(env->rng, 3) + 2; corridorLength > 0; corridorLength--) {
+            int blockLength = corridorLength * 5;
+
+            Pos3 bb0, bb1;
+            switch (facing) {
+            case NORTH: bb0 = (Pos3) {x + 0, y, z + - (blockLength - 1)}; bb1 = (Pos3) {x + 2, y + 2, z + 0}; break;
+            case EAST:  bb0 = (Pos3) {x + 0, y, z + 0}; bb1 = (Pos3) {x + blockLength - 1, y + 2, z + 2}; break;
+            case SOUTH: bb0 = (Pos3) {x + 0, y, z + 0}; bb1 = (Pos3) {x + 2, y + 2, z + blockLength - 1}; break;
+            case WEST:  bb0 = (Pos3) {x + - (blockLength - 1), y, z + 0}; bb1 = (Pos3) {x + 0, y + 2, z + 2}; break;
+            default: UNREACHABLE();
+            }
+            if (!hasCollision(env, bb0, bb1)) {
+                Piece *p = env->list + (*env->n)++;
+                p->name = "MSCorridor";
+                p->pos = bb0;
+                p->bb0 = bb0;
+                p->bb1 = bb1;
+                p->rot = facing;
+                p->depth = depth;
+                p->type = MS_CORRIDOR;
+                p->next = NULL;
+
+                //printf("Corridor x=%d y=%d z=%d dir=%s depth=%d\n", x, y, z, dirName(p->rot), p->depth-1);
+
+                int hasRails = nextInt(env->rng, 3) == 0;
+                p->additionalData |= hasRails << 0;
+                p->additionalData |= (!hasRails && nextInt(env->rng, 23) == 0) << 1; // spiderCorridor
+
+                extendMineshaftPiece(env, p);
+                return;
+            }
+        } // TODO check corridorLength > 0 check in older versions
+    }
+}
+
+static void extendMineshaftPiece(MineshaftPieceEnv *env, Piece *piece) { //add children
+    if (*env->n >= env->nmax) {
+        return;
+    }
+    switch (piece->type) {
+    case MS_CORRIDOR: {
+        int endSelection = nextInt(env->rng, 4);
+        Direction rot = piece->rot;
+        switch (rot) {
+        case NORTH:
+            if (endSelection <= 1) {
+                extendMineshaft(env, piece->bb0.x, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb0.z - 1, NORTH, piece->depth);
+            } else if (endSelection == 2) {
+                extendMineshaft(env, piece->bb0.x - 1, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb0.z, WEST, piece->depth);
+            } else {
+                extendMineshaft(env, piece->bb1.x + 1, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb0.z, EAST, piece->depth);
+            }
+            break;
+        case EAST:
+            if (endSelection <= 1) {
+                extendMineshaft(env, piece->bb1.x + 1, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb0.z, EAST, piece->depth);
+            } else if (endSelection == 2) {
+                extendMineshaft(env, piece->bb1.x - 3, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb0.z - 1, NORTH, piece->depth);
+            } else {
+                extendMineshaft(env, piece->bb1.x - 3, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb1.z + 1, SOUTH, piece->depth);
+            }
+            break;
+        case SOUTH:
+            if (endSelection <= 1) {
+                extendMineshaft(env, piece->bb0.x, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb1.z + 1, SOUTH, piece->depth);
+            } else if (endSelection == 2) {
+                extendMineshaft(env, piece->bb0.x - 1, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb1.z - 3, WEST, piece->depth);
+            } else {
+                extendMineshaft(env, piece->bb1.x + 1, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb1.z - 3, EAST, piece->depth);
+            }
+            break;
+        case WEST:
+            if (endSelection <= 1) {
+                extendMineshaft(env, piece->bb0.x - 1, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb0.z, WEST, piece->depth);
+            } else if (endSelection == 2) {
+                extendMineshaft(env, piece->bb0.x, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb0.z - 1, NORTH, piece->depth);
+            } else {
+                extendMineshaft(env, piece->bb0.x, piece->bb0.y - 1 + nextInt(env->rng, 3), piece->bb1.z + 1, SOUTH, piece->depth);
+            }
+            break;
+        default: UNREACHABLE();
+        }
+
+        if (piece->depth >= 8) {
+            break;
+        }
+        if (rot != NORTH && rot != SOUTH) {
+            for (int x = piece->bb0.x + 3; x + 3 <= piece->bb1.x; x += 5) {
+                int selection = nextInt(env->rng, 5);
+                if (selection == 0) {
+                    extendMineshaft(env, x, piece->bb0.y, piece->bb0.z - 1, NORTH, piece->depth + 1);
+                } else if (selection == 1) {
+                    extendMineshaft(env, x, piece->bb0.y, piece->bb1.z + 1, SOUTH, piece->depth + 1);
+                }
+            }
+        } else {
+            for (int z = piece->bb0.z + 3; z + 3 <= piece->bb1.z; z += 5) {
+                int selection = nextInt(env->rng, 5);
+                if (selection == 0) {
+                    extendMineshaft(env, piece->bb0.x - 1, piece->bb0.y, z, WEST, piece->depth + 1);
+                } else if (selection == 1) {
+                    extendMineshaft(env, piece->bb1.x + 1, piece->bb0.y, z, EAST, piece->depth + 1);
+                }
+            }
+        }
+        break;
+    }
+    case MS_CROSSING: {
+        switch ((Direction)piece->rot) {
+        case NORTH:
+            extendMineshaft(env, piece->bb0.x + 1, piece->bb0.y, piece->bb0.z - 1, NORTH, piece->depth);
+            extendMineshaft(env, piece->bb0.x - 1, piece->bb0.y, piece->bb0.z + 1, WEST,  piece->depth);
+            extendMineshaft(env, piece->bb1.x + 1, piece->bb0.y, piece->bb0.z + 1, EAST,  piece->depth);
+            break;
+        case EAST:
+            extendMineshaft(env, piece->bb0.x + 1, piece->bb0.y, piece->bb0.z - 1, NORTH, piece->depth);
+            extendMineshaft(env, piece->bb0.x + 1, piece->bb0.y, piece->bb1.z + 1, SOUTH, piece->depth);
+            extendMineshaft(env, piece->bb1.x + 1, piece->bb0.y, piece->bb0.z + 1, EAST,  piece->depth);
+            break;
+        case SOUTH:
+            extendMineshaft(env, piece->bb0.x + 1, piece->bb0.y, piece->bb1.z + 1, SOUTH, piece->depth);
+            extendMineshaft(env, piece->bb0.x - 1, piece->bb0.y, piece->bb0.z + 1, WEST,  piece->depth);
+            extendMineshaft(env, piece->bb1.x + 1, piece->bb0.y, piece->bb0.z + 1, EAST,  piece->depth);
+            break;
+        case WEST:
+            extendMineshaft(env, piece->bb0.x + 1, piece->bb0.y, piece->bb0.z - 1, NORTH, piece->depth);
+            extendMineshaft(env, piece->bb0.x + 1, piece->bb0.y, piece->bb1.z + 1, SOUTH, piece->depth);
+            extendMineshaft(env, piece->bb0.x - 1, piece->bb0.y, piece->bb0.z + 1, WEST,  piece->depth);
+            break;
+        default: UNREACHABLE();
+        }
+
+        int isTwoFloored = piece->bb1.y - piece->bb0.y + 1 > 3;
+        if (!isTwoFloored) {
+            break;
+        }
+        if (next(env->rng, 1)) {
+            extendMineshaft(env, piece->bb0.x + 1, piece->bb0.y + 3 + 1, piece->bb0.z - 1, NORTH, piece->depth);
+        }
+        if (next(env->rng, 1)) {
+            extendMineshaft(env, piece->bb0.x - 1, piece->bb0.y + 3 + 1, piece->bb0.z + 1, WEST,  piece->depth);
+        }
+        if (next(env->rng, 1)) {
+            extendMineshaft(env, piece->bb1.x + 1, piece->bb0.y + 3 + 1, piece->bb0.z + 1, EAST,  piece->depth);
+        }
+        if (next(env->rng, 1)) {
+            extendMineshaft(env, piece->bb0.x + 1, piece->bb0.y + 3 + 1, piece->bb1.z + 1, SOUTH, piece->depth);
+        }
+        break;
+    }
+    case MS_ROOM: {
+        int heightSpace = (piece->bb1.y - piece->bb0.y + 1) - 3 - 1;
+        if (heightSpace <= 0) {
+            heightSpace = 1;
+        }
+
+        int xSpan = piece->bb1.x - piece->bb0.x + 1;
+
+        // printf("Room bb: %d %d %d -> %d %d %d\n", piece->bb0.x, piece->bb0.y, piece->bb0.z, piece->bb1.x, piece->bb1.y, piece->bb1.z);
+        // printf("xSpan=%d ySpace=%d zSpan=%d\n", xSpan, heightSpace, piece->bb1.z - piece->bb0.z + 1);
+        for (int pos = 0; pos < xSpan; pos += 4) {
+            pos += nextInt(env->rng, xSpan);
+            if (pos + 3 > xSpan) {
+                break;
+            }
+            extendMineshaft(env, piece->bb0.x + pos, piece->bb0.y + nextInt(env->rng, heightSpace) + 1, piece->bb0.z - 1, NORTH, piece->depth);
+        }
+
+        for (int pos = 0; pos < xSpan; pos += 4) {
+            pos += nextInt(env->rng, xSpan);
+            if (pos + 3 > xSpan) {
+                break;
+            }
+            extendMineshaft(env, piece->bb0.x + pos, piece->bb0.y + nextInt(env->rng, heightSpace) + 1, piece->bb1.z + 1, SOUTH, piece->depth);
+        }
+
+        int zSpan = piece->bb1.z - piece->bb0.z + 1;
+        for (int pos = 0; pos < zSpan; pos += 4) {
+            pos += nextInt(env->rng, zSpan);
+            if (pos + 3 > zSpan) {
+                break;
+            }
+            extendMineshaft(env, piece->bb0.x - 1, piece->bb0.y + nextInt(env->rng, heightSpace) + 1, piece->bb0.z + pos, WEST, piece->depth);
+        }
+
+        for (int pos = 0; pos < zSpan; pos += 4) {
+            pos += nextInt(env->rng, zSpan);
+            if (pos + 3 > zSpan) {
+                break;
+            }
+            extendMineshaft(env, piece->bb1.x + 1, piece->bb0.y + nextInt(env->rng, heightSpace) + 1, piece->bb0.z + pos, EAST, piece->depth);
+        }
+        break;
+    }
+    case MS_STAIRS: {
+        switch ((Direction)piece->rot) {
+        case NORTH:
+            extendMineshaft(env, piece->bb0.x, piece->bb0.y, piece->bb0.z - 1, NORTH, piece->depth);
+            break;
+        case EAST:
+            extendMineshaft(env, piece->bb1.x + 1, piece->bb0.y, piece->bb0.z, EAST, piece->depth);
+            break;
+        case SOUTH:
+            extendMineshaft(env, piece->bb0.x, piece->bb0.y, piece->bb1.z + 1, SOUTH, piece->depth);
+            break;
+        case WEST:
+            extendMineshaft(env, piece->bb0.x - 1, piece->bb0.y, piece->bb0.z, WEST, piece->depth);
+            break;
+        default: UNREACHABLE();
+        }
+        break;
+    }
+    default: UNREACHABLE();
+    }
+}
+
+int getMineshaftPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ) {
+    int x = (chunkX << 4) + 2;
+    int z = (chunkZ << 4) + 2;
+
+    uint64_t rng = chunkGenerateRnd(seed, chunkX, chunkZ);
+
+    int count = 1;
+
+    MineshaftPieceEnv env;
+    memset(&env, 0, sizeof(env));
+    env.mc = mc;
+    env.list = list;
+    env.n = &count;
+    env.rng = &rng;
+    env.nmax = n;
+
+    Piece *p = list;
+    p->type = MS_ROOM;
+    p->name = "MSRoom";
+
+    p->bb0 = p->bb1 = p->pos = (Pos3) {x, 50, z};
+    p->bb1.x += 7 + nextInt(&rng, 6);
+    p->bb1.y += 4 + nextInt(&rng, 6);
+    p->bb1.z += 7 + nextInt(&rng, 6);
+
+    p->depth = 0;
+    p->next = NULL;
+
+    printf("starter: %d %d\n", p->pos.x, p->pos.z);
+    //printf("Cross x=%d y=%d z=%d dir=%s depth=%d\n", p->pos.x, p->pos.y, p->pos.z, dirName(p->rot), p->depth);
+    
+    extendMineshaftPiece(&env, p);
+    return count;
+}
+
+static int isSupportingBox(Piece *p, int cx, int cz, int x0, int x1, int z0) {
+    for (int x = x0; x <= x1; x++) {
+        int tx = x, tz = z0;
+        rotPos(p->bb0, p->bb1, &tx, &tz, p->rot);
+        if (tx < cx || tx >= cx + 16 || tz < cz || tz >= cz + 16) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static void placeSupport(Piece *p, int cx, int cz, int x0, int z, int x1, RandomSource rnd) {
+    if (isSupportingBox(p, cx, cz, x0, x1, z)) {
+        if (rnd.nextInt(rnd.state, 4) != 0) {
+            maybeGenerateBlock(rnd);
+            maybeGenerateBlock(rnd);
+        }
+    }
+}
+
+static void maybePlaceCobWeb(Piece *p, int cx, int cz, RandomSource rnd, int x, int z) {
+    rotPos(p->bb0, p->bb1, &x, &z, p->rot);
+    if (x >= cx && x < cx + 16 && z >= cz && z < cz + 16) {
+        rnd.nextFloat(rnd.state);
+    }
+}
+
+int getMineshaftLoot(Piece *list, int n, StructureSaltConfig ssconf, int mc, uint64_t seed, int chunkX, int chunkZ) {
+    int count = getMineshaftPieces(list, n, mc, seed, chunkX, chunkZ);
+
+    const int legacy = mc <= MC_1_17;
+    int minX = list->bb0.x;
+    int minZ = list->bb0.z;
+    int maxX = list->bb1.x;
+    int maxZ = list->bb1.z;
+    for (int i = 0; i < count; ++i) {
+        Piece *p = &list[i];
+        minX = MIN(minX, p->bb0.x);
+        minZ = MIN(minZ, p->bb0.z);
+        maxX = MAX(maxX, p->bb1.x);
+        maxZ = MAX(maxZ, p->bb1.z);
+    }
+    int cMinX = minX & ~15;
+    int cMinZ = minZ & ~15;
+    int cMaxX = maxX & ~15;
+    int cMaxZ = maxZ & ~15;
+
+    // slow code ahead
+    for (int cx = cMinX; cx <= cMaxX; cx += 16) {
+        for (int cz = cMinZ; cz <= cMaxZ; cz += 16) {
+            CREATE_RANDOM_SOURCE(rnd, legacy);
+            uint64_t populationSeed = getPopulationSeed(mc, seed, cx, cz);
+            rnd.setSeed(rnd.state, populationSeed + ssconf.generationStep * 10000 + ssconf.decoratorIndex);
+            for (int i = 0; i < count; ++i) {
+                Piece *p = &list[i];
+                if (!(p->bb1.x >= cx && p->bb0.x <= cx + 15 &&
+                      p->bb1.z >= cz && p->bb0.z <= cz + 15)) {
+                    continue;
+                }
+                switch (p->type) {
+                case MS_CORRIDOR: {
+
+                    CaveCarverConfig caveCarverConfig;
+                    CanyonCarverConfig canyonCarverConfig;
+                    Pos3List carvedCaveList;
+                    Pos3List carvedCanyonList;
+                    Pos3List waterCaves;
+                    Pos3List waterCanyons;
+                    int touchesWater = 0;
+                    
+                    Generator g;
+                    setupGenerator(&g, mc, 0);
+                    applySeed(&g, DIM_OVERWORLD, seed);
+                    int biome = getBiomeAt(&g, 4, cx >> 4, 64, cz >> 4); // could be heavily optimized by pulling the generator out of getMineshaftLoot
+                                                                         // at the time of writing i havent fixed the bugs so im not gonna go through that trouble rn
+
+                    createPos3List(&carvedCaveList, 1);
+                    createPos3List(&carvedCanyonList, 1);
+                    createPos3List(&waterCaves, 1);
+                    createPos3List(&waterCanyons, 1);
+
+                    for (int caveCarverType = 0; caveCarverType < 4; caveCarverType++) {
+                        if (getCaveCarverConfig(caveCarverType, mc, biome, &caveCarverConfig) &&
+                            isViableCaveBiome(caveCarverType, biome)) {
+                            
+                            Pos3List tempList = carveCave(seed, mc, cx >> 4, cz >> 4, caveCarverConfig);
+
+                            for (int i = 0; i < tempList.size; i++) {
+                                appendPos3List(&carvedCaveList, tempList.pos3s[i]);
+                                if (caveCarverType == 2 || caveCarverType == 3) appendPos3List(&waterCaves, tempList.pos3s[i]);
+                            }
+
+                            freePos3List(&tempList);
+                        }
+                    }
+
+                    for (int canyonCarverType = 0; canyonCarverType < 2; canyonCarverType++) {
+                        if (getCanyonCarverConfig(canyonCarverType, mc, &canyonCarverConfig) &&
+                            isViableCanyonBiome(canyonCarverType, biome)) {
+
+                            Pos3List tempList = carveCanyon(seed, mc, cx >> 4, cz >> 4, canyonCarverConfig);
+
+                            for (int k = 0; k < tempList.size; k++) {
+                                appendPos3List(&carvedCanyonList, tempList.pos3s[k]);
+                                if (canyonCarverType == 1) {
+                                    // printf("%d %d %d\n", tempList.pos3s[k].x, tempList.pos3s[k].y, tempList.pos3s[k].z);
+                                    appendPos3List(&waterCanyons, tempList.pos3s[k]);
+                                }
+                            }
+
+                            freePos3List(&tempList);
+                        }
+                    }
+
+                    for (int i = 0; i < waterCaves.size; i++) {
+                        Pos3 pos = waterCaves.pos3s[i];
+                        // if (p->bb0.x == 254 &&  p->bb0.x == 254 && p->bb0.y == 51 && p->bb0.z == 61 && p->bb1.x == 256 && p->bb1.y == 53 && p->bb1.z == 80) {
+                        //     printf("254 51 51 found.\n");
+                        // }
+                        if (pos.x >= p->bb0.x && pos.x <= p->bb1.x &&
+                            pos.y >= p->bb0.y && pos.y <= p->bb1.y &&
+                            pos.z >= p->bb0.z && pos.z <= p->bb1.z) {
+                            touchesWater = 1;
+                            break;
+                        }
+                        // if (p->bb0.x == 254 &&  p->bb0.x == 254 && p->bb0.y == 51 && p->bb0.z == 61 && p->bb1.x == 256 && p->bb1.y == 53 && p->bb1.z == 80) {
+                        //     printf("254 51 51 not skipped.\n");
+                        // }
+                    }
+
+                    //printf("touchesWater=%d for chunk %d %d\n", touchesWater, cx >> 4, cz >> 4);
+                    if (touchesWater) {
+                        //printf("touches water: %d %d %d, %d %d %d\n", p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z);
+                        continue;
+                    }
+                    
+                    
+                    for (int i = 0; i < waterCanyons.size; i++) {
+                        Pos3 pos = waterCanyons.pos3s[i];
+                        // if (p->bb0.x == 254 &&  p->bb0.x == 254 && p->bb0.y == 51 && p->bb0.z == 61 && p->bb1.x == 256 && p->bb1.y == 53 && p->bb1.z == 80) {
+                        //     printf("254 51 51 found.\n");
+                        // }
+                        if (pos.x >= p->bb0.x && pos.x <= p->bb1.x &&
+                            pos.y >= p->bb0.y && pos.y <= p->bb1.y &&
+                            pos.z >= p->bb0.z && pos.z <= p->bb1.z) {
+                            touchesWater = 1;
+                            break;
+                        }
+                        // if (p->bb0.x == 254 &&  p->bb0.x == 254 && p->bb0.y == 51 && p->bb0.z == 61 && p->bb1.x == 256 && p->bb1.y == 53 && p->bb1.z == 80) {
+                        //     printf("254 51 51 not skipped.\n");
+                        // }
+                    }
+
+                    //printf("touchesWater=%d for chunk %d %d\n", touchesWater, cx >> 4, cz >> 4);
+                    if (touchesWater) {
+                        //printf("touches water: %d %d %d, %d %d %d\n", p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z);
+                        continue;
+                    }
+                    int numSections; // TODO cache?
+                    if (p->rot == NORTH || p->rot == SOUTH) {
+                        numSections = (p->bb1.z - p->bb0.z + 1) / 5;
+                    } else {
+                        numSections = (p->bb1.x - p->bb0.x + 1) / 5;
+                    }
+                    int length = numSections * 5 - 1;
+                    generateMaybeBox(0, 2, 0, 2, 2, length, rnd);
+                    if ((p->additionalData >> 1) & 1) {
+                        generateMaybeBox(0, 0, 0, 2, 1, length, rnd);
+                    }
+
+                    p->chestCount = 0;
+                    // printf("numSections=%d piece rot=%s bb=(%d,%d)->(%d,%d)\n", numSections, dirName(p->rot), p->bb0.x, p->bb0.z, p->bb1.x, p->bb1.z);
+
+                    for (int section = 0; section < numSections; section++) {
+                        int z = 2 + section * 5;
+                        placeSupport(p, cx, cz, 0, z, 2, rnd);
+                        maybePlaceCobWeb(p, cx, cz, rnd, 0, z - 1);
+                        maybePlaceCobWeb(p, cx, cz, rnd, 2, z - 1);
+                        maybePlaceCobWeb(p, cx, cz, rnd, 0, z + 1);
+                        maybePlaceCobWeb(p, cx, cz, rnd, 2, z + 1);
+                        maybePlaceCobWeb(p, cx, cz, rnd, 0, z - 2);
+                        maybePlaceCobWeb(p, cx, cz, rnd, 2, z - 2);
+                        maybePlaceCobWeb(p, cx, cz, rnd, 0, z + 2);
+                        maybePlaceCobWeb(p, cx, cz, rnd, 2, z + 2);
+
+                        if (rnd.nextInt(rnd.state, 100) == 0) {
+                            int chestPosX = 2, chestPosZ = z - 1;
+                            rotPos(p->bb0, p->bb1, &chestPosX, &chestPosZ, p->rot);
+                            if (chestPosX >= cx && chestPosX < cx + 16 && chestPosZ >= cz && chestPosZ < cz + 16) {
+                                rnd.nextBoolean(rnd.state);
+                                p->chestPoses[p->chestCount] = (Pos) {chestPosX, chestPosZ};
+                                //printf("chest bbox: %d %d %d, %d %d %d\n", p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z);
+                                printf("chest position: %d %d\n", chestPosX, chestPosZ);
+                                p->lootTables[p->chestCount] = "abandoned_mineshaft";
+                                p->lootSeeds[p->chestCount] = rnd.nextLong(rnd.state);
+                                p->chestCount++;
+                            }
+                        }
+
+                        if (rnd.nextInt(rnd.state, 100) == 0) {
+                            int chestPosX = 0, chestPosZ = z + 1;
+                            rotPos(p->bb0, p->bb1, &chestPosX, &chestPosZ, p->rot);
+                            if (chestPosX >= cx && chestPosX < cx + 16 && chestPosZ >= cz && chestPosZ < cz + 16) {
+                                rnd.nextBoolean(rnd.state);
+                                p->chestPoses[p->chestCount] = (Pos) {chestPosX, chestPosZ};
+                                //printf("chest bbox: %d %d %d, %d %d %d\n", p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z);
+                                printf("chest position: %d %d\n", chestPosX, chestPosZ);
+                                p->lootTables[p->chestCount] = "abandoned_mineshaft";
+                                p->lootSeeds[p->chestCount] = rnd.nextLong(rnd.state);
+                                p->chestCount++;
+                            }
+                        }
+
+                        // this.spiderCorridor && !this.hasPlacedSpider
+                        // spiderCorridor is 0b_X_, hasPlacedSpider is 0bX__
+                        if (((p->additionalData >> 1) & 0b11) == 0b01) {
+                            int newX = 1;
+                            int newZ = z - 1 + rnd.nextInt(rnd.state, 3);
+                            rotPos(p->bb0, p->bb1, &newX, &newZ, p->rot);
+                            if (newX >= cx && newX < cx + 16 && newZ >= cz && newZ < cz + 16) {
+                                p->additionalData |= 1 << 2;
+                                // spawner.setEntityId(EntityType.CAVE_SPIDER, random);
+                            }
+                        }
+                    }
+
+                    if ((p->additionalData >> 0) & 1) {
+                        for (int zx = 0; zx <= length; zx++) {
+                            int tx = 1, tz = zx;
+                            rotPos(p->bb0, p->bb1, &tx, &tz, p->rot);
+                            if (tx >= cx && tx < cx + 16 && tz >= cz && tz < cz + 16) {
+                                maybeGenerateBlock(rnd);
+                            }
+                        }
+                    }
+                    break;
+                }
+                case MS_CROSSING:
+                case MS_ROOM:
+                case MS_STAIRS:
+                    p->chestCount = 0;
+                    break;
+                default: UNREACHABLE();
+                }
+            }
+        }
+    }
+
+    return count;
+}
