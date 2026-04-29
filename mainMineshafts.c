@@ -24,29 +24,24 @@ int main()
     int max = 400;
     Piece *pieceList = malloc(400 * sizeof(Piece));
     StructureSaltConfig ssconf;
-
-    
     Pos pos;
 
-
-    for (int regX = -20; regX < 20; regX++) {
-        for (int regZ = -20; regZ < 20; regZ++) {
+    for (int regX = 16; regX < 18; regX++) {
+        for (int regZ = 5; regZ < 7; regZ++) {
             if (!getStructurePos(Mineshaft, mc, seed, regX, regZ, &pos)) // reg size for mineshafts is 1 chunk
                 continue;
             if (isViableStructurePos(Mineshaft, &g, pos.x, pos.z, 0)) {
                 printf("Structure pos: %d %d\n", pos.x, pos.z);
+                
                 getStructureSaltConfig(Mineshaft, mc, getBiomeAt(&g, 4, pos.x, 64, pos.z), &ssconf);
                 int mineshaftPieceCount = getMineshaftLoot(pieceList, max, ssconf, mc, seed, regX, regZ);
-                //printf("Mineshaft at %d ~ %d\n", pos.x, pos.z);
-                //printf("%d\n", mineshaftPieceCount);
-
+ 
                 for (int i = 0; i < mineshaftPieceCount; ++i) {
-                    
                     Piece *piece = &pieceList[i];
                     for (int j = 0; j < piece->chestCount; ++j) {
                         Pos chestPos = piece->chestPoses[j];
-                        //printf("finalized chestpos %d %d\n", chestPos.x, chestPos.z);
-                        //printf("%lu\n\n", piece->lootSeeds);
+                        printf("finalized chestpos %d %d\n", chestPos.x, chestPos.z);
+                        printf("lootseed: %ld\n\n", piece->lootSeeds[j]);
                     }
                 }
             }
