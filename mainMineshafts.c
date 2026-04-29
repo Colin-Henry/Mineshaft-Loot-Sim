@@ -34,7 +34,7 @@ int main()
                 printf("Structure pos: %d %d\n", pos.x, pos.z);
                 
                 getStructureSaltConfig(Mineshaft, mc, getBiomeAt(&g, 4, pos.x, 64, pos.z), &ssconf);
-                int mineshaftPieceCount = getMineshaftLoot(pieceList, max, ssconf, mc, seed, regX, regZ);
+                int mineshaftPieceCount = getMineshaftLoot(&g, pieceList, max, ssconf, mc, seed, regX, regZ);
  
                 for (int i = 0; i < mineshaftPieceCount; ++i) {
                     Piece *piece = &pieceList[i];
