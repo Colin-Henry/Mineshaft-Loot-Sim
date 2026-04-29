@@ -2415,7 +2415,7 @@ static void carveEllipsoid(int chunkX, int chunkZ, double x, double y, double z,
 
 static void carveCanyonInner(CanyonCarverConfig ccc, uint64_t seed, int mc, int sourceChunkX, int sourceChunkZ, double x, double y, double z, float thickness, float yaw, float pitch, int branchCount, double horizontalVerticalRatio, char carvingMask[], Pos3List* poses);
 
-Pos3List carveCanyon(uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarverConfig ccc, Generator *g) {
+Pos3List carveCanyon(Generator *g, uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarverConfig ccc, int canyonCarverType) {
     Pos3List poses;
     createPos3List(&poses, 1024);
 
@@ -2428,9 +2428,8 @@ Pos3List carveCanyon(uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarver
         for (int relChunkZ = -8; relChunkZ <= 8; ++relChunkZ) {
             int offsetChunkX = chunkX + relChunkX;
             int offsetChunkZ = chunkZ + relChunkZ;
-            if (g) {
-                int srcBiome = getBiomeAt(g, 4, offsetChunkX * 4, 0, offsetChunkZ * 4);
-                if (!isOceanic(srcBiome)) continue;
+            if (canyonCarverType == 1) {
+                if (!isOceanic(getBiomeAt(g, 4, offsetChunkX * 4, 0, offsetChunkZ * 4))) continue;
             }
             uint64_t rnd;
             if (!checkCanyonStart(seed, offsetChunkX, offsetChunkZ, ccc, &rnd)) {
@@ -2521,7 +2520,7 @@ static void carveCanyonInner(CanyonCarverConfig ccc, uint64_t seed, int mc, int 
 
 static void carveCaveInner(CaveCarverConfig ccc, uint64_t* rnd, int sourceChunkX, int sourceChunkZ, int chunkX, int chunkZ, int worldMinY, int worldHeight, char carvingMask[], Pos3List* poses);
 
-Pos3List carveCave(uint64_t seed, int mc, int chunkX, int chunkZ, CaveCarverConfig ccc, Generator *g, int (*biomeFilter)(int)) {
+Pos3List carveCave(Generator *g, uint64_t seed, int mc, int chunkX, int chunkZ, CaveCarverConfig ccc, int caveCarverType) {
     Pos3List poses;
     createPos3List(&poses, 1024);
 
@@ -2543,10 +2542,12 @@ Pos3List carveCave(uint64_t seed, int mc, int chunkX, int chunkZ, CaveCarverConf
         for (int relChunkZ = -8; relChunkZ <= 8; ++relChunkZ) {
             int offsetChunkX = chunkX + relChunkX;
             int offsetChunkZ = chunkZ + relChunkZ;
-            if (g && biomeFilter) {
-                int srcBiome = getBiomeAt(g, 4, offsetChunkX * 4, 0, offsetChunkZ * 4);
-                if (!biomeFilter(srcBiome)) continue;
-            }
+            if (caveCarverType == 2) if (!isOceanic(getBiomeAt(g, 4, offsetChunkX * 4, 0, offsetChunkZ * 4))) continue;
+            if (caveCarverType == 3) {
+                if ((!isDeepOcean(getBiomeAt(g, 4, offsetChunkX * 4, 0, offsetChunkZ * 4))) || getBiomeAt(g, 4, offsetChunkX * 4, 0, offsetChunkZ * 4) != frozen_ocean) {
+                    continue;
+                }
+            }            
             uint64_t rnd;
             if (!checkCaveStart(seed, offsetChunkX, offsetChunkZ, ccc, &rnd)) {
                 continue;
@@ -7855,5 +7856,4 @@ int getLargestRec(int match, const int *ids, int sx, int sz, Pos *p0, Pos *p1)
     free(meta);
     return ret;
 }
-
 

@@ -726,9 +726,10 @@ int checkCaveStart(uint64_t seed, int chunkX, int chunkZ, CaveCarverConfig ccc, 
  * @param chunkX the chunk X-coordinate
  * @param chunkZ the chunk Z-coordinate
  * @param ccc the canyon carver config
+ * @param canyonCarverType the type of canyon
  * @return the list of carved blocks
  */
-Pos3List carveCanyon(uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarverConfig ccc, Generator *g);
+Pos3List carveCanyon(Generator *g, uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarverConfig ccc, int canyonCarverType);
 
 /**
  * Carve out a cave at the given chunk. The returned list consists of all carved blocks.
@@ -736,9 +737,10 @@ Pos3List carveCanyon(uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarver
  * @param chunkX the chunk X-coordinate
  * @param chunkZ the chunk Z-coordinate
  * @param ccc the cave carver config
+ * @param caveCarverType the type of cave
  * @return the list of carved blocks
  */
-Pos3List carveCave(uint64_t seed, int mc, int chunkX, int chunkZ, CaveCarverConfig ccc, Generator *g, int (*biomeFilter)(int));
+Pos3List carveCave(Generator *g, uint64_t seed, int mc, int chunkX, int chunkZ, CaveCarverConfig ccc, int caveCarverType);
 
 //==============================================================================
 // Random providers
