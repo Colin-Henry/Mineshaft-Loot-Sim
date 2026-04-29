@@ -321,7 +321,7 @@ static void extendMineshaftPiece(MineshaftPieceEnv *env, Piece *piece) { //add c
     }
 }
 
-int getMineshaftPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ) {
+int getMineshaftPieces(Generator *g, Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ) {
     int x = (chunkX << 4) + 2;
     int z = (chunkZ << 4) + 2;
 
@@ -367,13 +367,9 @@ int getMineshaftPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, in
         maxZ = MAX(maxZ, p->bb1.z);
     }
 
-    Generator g; // TODO optimize via an arg
-    setupGenerator(&g, mc, 0);
-    applySeed(&g, DIM_OVERWORLD, seed);
     int vertShift = 0;
-    int biome = getBiomeAt(&g, 4, chunkX << 2, 0, chunkZ << 2); 
-    if (biome == badlands || badlands_plateau || wooded_badlands || wooded_badlands_plateau || 
-        eroded_badlands || modified_badlands_plateau || modified_wooded_badlands_plateau) { // TODO fix mesa gen. some chests work some dont
+    int biome = getBiomeAt(g, 4, chunkX << 2, 0, chunkZ << 2); 
+    if (biome == badlands || biome == badlands_plateau || biome == wooded_badlands || biome == wooded_badlands_plateau || biome == eroded_badlands || biome == modified_badlands_plateau || biome == modified_wooded_badlands_plateau) {
         vertShift = 63 - maxY + (maxY - minY + 1) / 2 + 5;
     } else {
         int k = 53;
@@ -447,8 +443,8 @@ static void maybePlaceCobWeb(Piece *p, int cx, int cz, RandomSource rnd, int x, 
     }
 }
 
-int getMineshaftLoot(Piece *list, int n, StructureSaltConfig ssconf, int mc, uint64_t seed, int chunkX, int chunkZ) {
-    int count = getMineshaftPieces(list, n, mc, seed, chunkX, chunkZ);
+int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig ssconf, int mc, uint64_t seed, int chunkX, int chunkZ) {
+    int count = getMineshaftPieces(&g, list, n, mc, seed, chunkX, chunkZ);
 
     const int legacy = mc <= MC_1_17;
     int minX = list->bb0.x;
@@ -495,10 +491,7 @@ int getMineshaftLoot(Piece *list, int n, StructureSaltConfig ssconf, int mc, uin
                 Pos3List waterCanyons;
                 int touchesWater = 0;
                 
-                Generator g; // TODO optimize via an arg
-                setupGenerator(&g, mc, 0);
-                applySeed(&g, DIM_OVERWORLD, seed);
-                int biome = getBiomeAt(&g, 4, cx >> 2, 0, cz >> 2); 
+                int biome = getBiomeAt(g, 4, cx >> 2, 0, cz >> 2); 
 
                 createPos3List(&carvedCaveList, 1);
                 createPos3List(&carvedCanyonList, 1);
@@ -508,12 +501,8 @@ int getMineshaftLoot(Piece *list, int n, StructureSaltConfig ssconf, int mc, uin
                 for (int caveCarverType = 0; caveCarverType < 4; caveCarverType++) {
                     if (!getCaveCarverConfig(caveCarverType, mc, biome, &caveCarverConfig)) continue;
                     if (caveCarverType <= 1 && !isViableCaveBiome(caveCarverType, biome)) continue;
-                    Generator *srcGen = NULL;
-                    int (*srcFilter)(int) = NULL;
-                    if (caveCarverType == 2) { srcGen = &g; srcFilter = isOceanic; }
-                    if (caveCarverType == 3) { srcGen = &g; srcFilter = isUnderwaterCaveBiome; }
 
-                    Pos3List tempList = carveCave(seed, mc, cx >> 4, cz >> 4, caveCarverConfig, srcGen, srcFilter);
+                    Pos3List tempList = carveCave(g, seed, mc, cx >> 4, cz >> 4, caveCarverConfig, caveCarverType);
 
                     for (int i = 0; i < tempList.size; i++) {
                         appendPos3List(&carvedCaveList, tempList.pos3s[i]);
@@ -526,9 +515,8 @@ int getMineshaftLoot(Piece *list, int n, StructureSaltConfig ssconf, int mc, uin
                 for (int canyonCarverType = 0; canyonCarverType < 2; canyonCarverType++) {
                     if (!getCanyonCarverConfig(canyonCarverType, mc, &canyonCarverConfig)) continue;
                     if (canyonCarverType == 0 && !isViableCanyonBiome(0, biome)) continue;
-                    Generator *srcFilter = (canyonCarverType == 1) ? &g : NULL;
 
-                    Pos3List tempList = carveCanyon(seed, mc, cx >> 4, cz >> 4, canyonCarverConfig, srcFilter);
+                    Pos3List tempList = carveCanyon(g, seed, mc, cx >> 4, cz >> 4, canyonCarverConfig, canyonCarverType);
 
                     for (int k = 0; k < tempList.size; k++) {
                         appendPos3List(&carvedCanyonList, tempList.pos3s[k]);
@@ -540,6 +528,14 @@ int getMineshaftLoot(Piece *list, int n, StructureSaltConfig ssconf, int mc, uin
                     freePos3List(&tempList);
                 }
 
+                if (p->bb0.x == 254 && p->bb0.y == 27 && p->bb0.z == 46) {
+                    for (int i = 0; i < waterCaves.size; i++) {
+                        Pos3 pos = waterCaves.pos3s[i];
+                    }
+                    for (int i = 0; i < waterCanyons.size; i++) {
+                        Pos3 pos = waterCanyons.pos3s[i];
+                    }
+                }
                 for (int i = 0; i < waterCaves.size; i++) {
                     Pos3 pos = waterCaves.pos3s[i];
                     if (pos.x >= p->bb0.x - 1 && pos.x <= p->bb1.x + 1 &&
@@ -595,7 +591,6 @@ int getMineshaftLoot(Piece *list, int n, StructureSaltConfig ssconf, int mc, uin
 
                     for (int section = 0; section < numSections; section++) {
                         int z = 2 + section * 5;
-
                         placeSupport(p, cx, cz, 0, z, 2, rnd, &carvedCaveList, &carvedCanyonList, list, count);
                         maybePlaceCobWeb(p, cx, cz, rnd, 0, z - 1);
                         maybePlaceCobWeb(p, cx, cz, rnd, 2, z - 1);

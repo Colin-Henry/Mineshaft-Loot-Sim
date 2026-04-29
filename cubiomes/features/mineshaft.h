@@ -6,10 +6,19 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/*
-test
-*/
-int getMineshaftPieces(Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ);
+
+/**
+ * Generates the mineshaft pieces for a given mineshaft.
+ * @param g the biome generator
+ * @param list the empty list of mineshaft pieces
+ * @param n the maximum number of pieces (typically 400 is fine)
+ * @param mc the minecraft version
+ * @param seed the world seed
+ * @param chunkX the chunk X-coordinate
+ * @param chunkZ the chunk Z-coordinate
+ * @return the completed list of mineshaft pieces
+ */
+int getMineshaftPieces(Generator *g, Piece *list, int n, int mc, uint64_t seed, int chunkX, int chunkZ);
 
 enum {
     MS_CORRIDOR,
@@ -19,7 +28,18 @@ enum {
     MS_PIECE_COUNT,
 };
 
-int getMineshaftLoot(Piece *list, int n, StructureSaltConfig ssconf, int mc, uint64_t seed, int chunkX, int chunkZ);
+/**
+ * Generates the mineshaft pieces and loot for a given mineshaft.
+ * @param g the biome generator
+ * @param list the empty list of mineshaft pieces
+ * @param n the maximum number of pieces (typically 400 is fine)
+ * @param mc the minecraft version
+ * @param seed the world seed
+ * @param chunkX the chunk X-coordinate
+ * @param chunkZ the chunk Z-coordinate
+ * @return the completed list of mineshaft pieces with loot
+ */
+int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig ssconf, int mc, uint64_t seed, int chunkX, int chunkZ);
 
 #ifdef __cplusplus
 }
