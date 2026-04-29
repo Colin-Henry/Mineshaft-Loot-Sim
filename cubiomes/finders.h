@@ -155,6 +155,7 @@ STRUCT(Piece)
     uint64_t lootSeeds[4];
     const char* lootTables[4];
     int additionalData;
+    int waterSkipped;
     Piece *next;
 };
 
@@ -727,7 +728,7 @@ int checkCaveStart(uint64_t seed, int chunkX, int chunkZ, CaveCarverConfig ccc, 
  * @param ccc the canyon carver config
  * @return the list of carved blocks
  */
-Pos3List carveCanyon(uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarverConfig ccc);
+Pos3List carveCanyon(uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarverConfig ccc, Generator *g);
 
 /**
  * Carve out a cave at the given chunk. The returned list consists of all carved blocks.
@@ -737,7 +738,7 @@ Pos3List carveCanyon(uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarver
  * @param ccc the cave carver config
  * @return the list of carved blocks
  */
-Pos3List carveCave(uint64_t seed, int mc, int chunkX, int chunkZ, CaveCarverConfig ccc);
+Pos3List carveCave(uint64_t seed, int mc, int chunkX, int chunkZ, CaveCarverConfig ccc, Generator *g, int (*biomeFilter)(int));
 
 //==============================================================================
 // Random providers

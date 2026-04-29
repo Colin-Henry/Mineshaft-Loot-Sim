@@ -2254,7 +2254,7 @@ int32_t getOreVeinBlockAt(int x, int y, int z, OreVeinParameters* params)
 
 int getCanyonCarverConfig(int canyonCarverType, int mc, CanyonCarverConfig* cconf) {
     static const CanyonCarverConfig
-    c_canyon_carver_113 = {DIM_OVERWORLD, 0.02F, 1, 4, providerUniformIntBetween, 10, 67, -1, 3.0F, providerUniformFloatBetween, -0.125F, 0.125F, providerUniformFloatBetween, 0.75F, 1.0F, providerTrapezoidFloatBetween, 0.0F, 6.0F, 2.0F, 3, providerUniformFloatBetween, 0.75F, 1.0F, 1.0F, 0.0F},
+    c_canyon_carver_113 = {DIM_OVERWORLD, 0.02F, 1, 4, providerBiasedToBottom, 20, 67, 8, 3.0F, providerUniformFloatBetween, -0.125F, 0.125F, providerUniformFloatBetween, 0.75F, 1.0F, providerTrapezoidFloatBetween, 0.0F, 6.0F, 2.0F, 3, providerUniformFloatBetween, 0.75F, 1.0F, 1.0F, 0.0F},
     c_canyon_carver_118 = {DIM_OVERWORLD, 0.01F, 2, 4, providerUniformIntBetween, 10, 67, -1, 3.0F, providerUniformFloatBetween, -0.125F, 0.125F, providerUniformFloatBetween, 0.75F, 1.0F, providerTrapezoidFloatBetween, 0.0F, 6.0F, 2.0F, 3, providerUniformFloatBetween, 0.75F, 1.0F, 1.0F, 0.0F},
 
     c_underwater_canyon_carver_113 = {DIM_OVERWORLD, 0.02F, 0, 4, providerBiasedToBottom, 20, 67, 8, 3.0F, providerUniformFloatBetween, -0.125F, 0.125F, providerUniformFloatBetween, 0.75F, 1.0F, providerTrapezoidFloatBetween, 0.0F, 6.0F, 2.0F, 3, providerUniformFloatBetween, 0.75F, 1.0F, 1.0F, 0.0F}
@@ -2398,7 +2398,12 @@ int checkCaveStart(uint64_t seed, int chunkX, int chunkZ, CaveCarverConfig ccc, 
 }
 
 static inline int shouldSkipCanyonCarve(double relativeX, double relativeY, double relativeZ, int y, /* float* */ void* widthFactors) {
-    int i = y - -64;
+    int i = y - -64; // 1.18+: worldMinY=-64
+    return (relativeX * relativeX + relativeZ * relativeZ) * ((float*) widthFactors)[i - 1] + relativeY * relativeY / 6.0 >= 1.0;
+}
+
+static inline int shouldSkipCanyonCarvePre118(double relativeX, double relativeY, double relativeZ, int y, /* float* */ void* widthFactors) {
+    int i = y; // pre-1.18: worldMinY=0, matches Java's rs[y-1]
     return (relativeX * relativeX + relativeZ * relativeZ) * ((float*) widthFactors)[i - 1] + relativeY * relativeY / 6.0 >= 1.0;
 }
 
@@ -2410,7 +2415,7 @@ static void carveEllipsoid(int chunkX, int chunkZ, double x, double y, double z,
 
 static void carveCanyonInner(CanyonCarverConfig ccc, uint64_t seed, int mc, int sourceChunkX, int sourceChunkZ, double x, double y, double z, float thickness, float yaw, float pitch, int branchCount, double horizontalVerticalRatio, char carvingMask[], Pos3List* poses);
 
-Pos3List carveCanyon(uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarverConfig ccc) {
+Pos3List carveCanyon(uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarverConfig ccc, Generator *g) {
     Pos3List poses;
     createPos3List(&poses, 1024);
 
@@ -2423,6 +2428,10 @@ Pos3List carveCanyon(uint64_t seed, int mc, int chunkX, int chunkZ, CanyonCarver
         for (int relChunkZ = -8; relChunkZ <= 8; ++relChunkZ) {
             int offsetChunkX = chunkX + relChunkX;
             int offsetChunkZ = chunkZ + relChunkZ;
+            if (g) {
+                int srcBiome = getBiomeAt(g, 4, offsetChunkX * 4, 0, offsetChunkZ * 4);
+                if (!isOceanic(srcBiome)) continue;
+            }
             uint64_t rnd;
             if (!checkCanyonStart(seed, offsetChunkX, offsetChunkZ, ccc, &rnd)) {
                 continue;
@@ -2506,17 +2515,17 @@ static void carveCanyonInner(CanyonCarverConfig ccc, uint64_t seed, int mc, int 
             return;
         }
 
-        carveEllipsoid(sourceChunkX, sourceChunkZ, x, y, z, horizontalRadius, verticalRadius, mc >= MC_1_18 ? -64 : 0, mc >= MC_1_18 ? 384 : 256, carvingMask, shouldSkipCanyonCarve, widthFactors, poses);
+        carveEllipsoid(sourceChunkX, sourceChunkZ, x, y, z, horizontalRadius, verticalRadius, mc >= MC_1_18 ? -64 : 0, mc >= MC_1_18 ? 384 : 256, carvingMask, mc >= MC_1_18 ? shouldSkipCanyonCarve : shouldSkipCanyonCarvePre118, widthFactors, poses);
     }
 }
 
 static void carveCaveInner(CaveCarverConfig ccc, uint64_t* rnd, int sourceChunkX, int sourceChunkZ, int chunkX, int chunkZ, int worldMinY, int worldHeight, char carvingMask[], Pos3List* poses);
 
-Pos3List carveCave(uint64_t seed, int mc, int chunkX, int chunkZ, CaveCarverConfig ccc) {
+Pos3List carveCave(uint64_t seed, int mc, int chunkX, int chunkZ, CaveCarverConfig ccc, Generator *g, int (*biomeFilter)(int)) {
     Pos3List poses;
     createPos3List(&poses, 1024);
 
-    int worldMinY; // These used to be const but had to remove to allow for pre 1.18
+    int worldMinY;
     int worldHeight;
 
     if (mc < MC_1_18) {
@@ -2534,6 +2543,10 @@ Pos3List carveCave(uint64_t seed, int mc, int chunkX, int chunkZ, CaveCarverConf
         for (int relChunkZ = -8; relChunkZ <= 8; ++relChunkZ) {
             int offsetChunkX = chunkX + relChunkX;
             int offsetChunkZ = chunkZ + relChunkZ;
+            if (g && biomeFilter) {
+                int srcBiome = getBiomeAt(g, 4, offsetChunkX * 4, 0, offsetChunkZ * 4);
+                if (!biomeFilter(srcBiome)) continue;
+            }
             uint64_t rnd;
             if (!checkCaveStart(seed, offsetChunkX, offsetChunkZ, ccc, &rnd)) {
                 continue;
@@ -2566,6 +2579,7 @@ static void carveCaveInner(CaveCarverConfig ccc, uint64_t* rnd, int sourceChunkX
         if (nextInt(rnd, 4) == 0) {
             double yScale = ccc.yScale(rnd, ccc.minYScale, ccc.maxYScale);
             float radius = 1.0F + nextFloat(rnd) * 6.0F;
+            nextLong(rnd);
             createRoom(sourceChunkX, sourceChunkZ, x, y, z, radius, yScale, worldMinY, worldHeight, carvingMask, floorLevel, poses);
             m += nextInt(rnd, 4);
         }
