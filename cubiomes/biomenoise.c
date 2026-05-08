@@ -2024,8 +2024,8 @@ int initBlendedNoise(BlendedNoise *bn, uint64_t ws, int dim)
     bn->factoredSmearedYScale = bn->smearedYScale / bn->yFactor;
 
     switch (dim) {
-    case DIM_OVERWORLD:;
-        Xoroshiro wsx;
+    case DIM_OVERWORLD:
+        ;Xoroshiro wsx;
         xSetSeed(&wsx, ws);
         const uint64_t lo = xNextLong(&wsx);
         const uint64_t hi = xNextLong(&wsx);
@@ -2036,8 +2036,8 @@ int initBlendedNoise(BlendedNoise *bn, uint64_t ws, int dim)
         xOctaveLegacyInit(&bn->octmain, &xr, bn->oct+32, -7, 8);
         break;
     case DIM_NETHER:
-    case DIM_END:;
-        uint64_t wsr;
+    case DIM_END:
+        ;uint64_t wsr;
         setSeed(&wsr, ws);
         const uint64_t nl = nextLong(&wsr);
 

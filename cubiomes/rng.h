@@ -137,7 +137,6 @@ static inline int nextBoolean(uint64_t *seed)
     return next(seed, 1);
 }
 
-
 static inline uint64_t nextLong(uint64_t *seed)
 {
     return ((uint64_t) next(seed, 32) << 32) + next(seed, 32);
@@ -552,6 +551,5 @@ uint64_t mulInv(uint64_t x, uint64_t m)
 
 
 #endif /* RNG_H_ */
-
 
 
