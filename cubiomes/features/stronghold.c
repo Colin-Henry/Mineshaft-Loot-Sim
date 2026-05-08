@@ -135,8 +135,9 @@ static int addStrongholdPiece(StrongholdPieceEnv *env, int typ, int x, int y, in
         return 0;
     }
 
-L_box_end:;
-    Piece *p = env->list + *env->n;
+L_box_end:
+
+    ;Piece *p = env->list + *env->n;
     p->name = stronghold_info[typ].name;
     p->pos = pos;
     p->bb0 = b0;

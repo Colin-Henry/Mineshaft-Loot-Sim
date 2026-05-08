@@ -77,7 +77,6 @@ static void extendMineshaft(MineshaftPieceEnv *env, int x, int y, int z, Directi
             p->depth = depth;
             p->type = MS_CROSSING;
             p->next = NULL;
-            //printf("Cross x=%d y=%d z=%d dir=%s depth=%d\n", x, y, z, dirName(p->rot), p->depth-1);
             extendMineshaftPiece(env, p);
             return;
         }
@@ -100,7 +99,6 @@ static void extendMineshaft(MineshaftPieceEnv *env, int x, int y, int z, Directi
             p->depth = depth;
             p->type = MS_STAIRS;
             p->next = NULL;
-            //printf("Stairs x=%d y=%d z=%d dir=%s depth=%d\n", x, y, z, dirName(p->rot), p->depth-1);
             extendMineshaftPiece(env, p);
             return;
         }
@@ -126,8 +124,6 @@ static void extendMineshaft(MineshaftPieceEnv *env, int x, int y, int z, Directi
                 p->depth = depth;
                 p->type = MS_CORRIDOR;
                 p->next = NULL;
-
-                //printf("Corridor x=%d y=%d z=%d dir=%s depth=%d\n", x, y, z, dirName(p->rot), p->depth-1);
 
                 int hasRails = nextInt(env->rng, 3) == 0;
                 p->additionalData |= hasRails << 0;
@@ -263,8 +259,6 @@ static void extendMineshaftPiece(MineshaftPieceEnv *env, Piece *piece) { //add c
 
         int xSpan = piece->bb1.x - piece->bb0.x + 1;
 
-        // printf("Room bb: %d %d %d -> %d %d %d\n", piece->bb0.x, piece->bb0.y, piece->bb0.z, piece->bb1.x, piece->bb1.y, piece->bb1.z);
-        // printf("xSpan=%d ySpace=%d zSpan=%d\n", xSpan, heightSpace, piece->bb1.z - piece->bb0.z + 1);
         for (int pos = 0; pos < xSpan; pos += 4) {
             pos += nextInt(env->rng, xSpan);
             if (pos + 3 > xSpan) {
@@ -444,7 +438,7 @@ static void maybePlaceCobWeb(Piece *p, int cx, int cz, RandomSource rnd, int x, 
 }
 
 int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig ssconf, int mc, uint64_t seed, int chunkX, int chunkZ) {
-    int count = getMineshaftPieces(&g, list, n, mc, seed, chunkX, chunkZ);
+    int count = getMineshaftPieces(g, list, n, mc, seed, chunkX, chunkZ);
 
     const int legacy = mc <= MC_1_17;
     int minX = list->bb0.x;
@@ -489,6 +483,7 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                 Pos3List carvedCanyonList;
                 Pos3List waterCaves;
                 Pos3List waterCanyons;
+                Pos3List tempList;
                 int touchesWater = 0;
                 
                 int biome = getBiomeAt(g, 4, cx >> 2, 0, cz >> 2); 
@@ -498,17 +493,24 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                 createPos3List(&waterCaves, 1);
                 createPos3List(&waterCanyons, 1);
 
+                Range r = {16, (cx >> 4) - 8, (cz >> 4) - 8, 17, 17, 0, 0};
+                int *cache = allocCache(g, r);
+                genBiomes(g, cache, r);
+
                 for (int caveCarverType = 0; caveCarverType < 4; caveCarverType++) {
                     if (!getCaveCarverConfig(caveCarverType, mc, biome, &caveCarverConfig)) continue;
                     if (caveCarverType <= 1 && !isViableCaveBiome(caveCarverType, biome)) continue;
+                    
+                    createPos3List(&tempList, 1);
 
-                    Pos3List tempList = carveCave(g, seed, mc, cx >> 4, cz >> 4, caveCarverConfig, caveCarverType);
-
+                    carveCave(seed, mc, cx >> 4, cz >> 4, caveCarverConfig, caveCarverType, (int (*)[17]) cache, &tempList);
+                    
+                    
                     for (int i = 0; i < tempList.size; i++) {
                         appendPos3List(&carvedCaveList, tempList.pos3s[i]);
                         if (caveCarverType == 2 || caveCarverType == 3) appendPos3List(&waterCaves, tempList.pos3s[i]);
                     }
-
+                    
                     freePos3List(&tempList);
                 }
 
@@ -516,26 +518,20 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                     if (!getCanyonCarverConfig(canyonCarverType, mc, &canyonCarverConfig)) continue;
                     if (canyonCarverType == 0 && !isViableCanyonBiome(0, biome)) continue;
 
-                    Pos3List tempList = carveCanyon(g, seed, mc, cx >> 4, cz >> 4, canyonCarverConfig, canyonCarverType);
+                    createPos3List(&tempList, 1);
 
-                    for (int k = 0; k < tempList.size; k++) {
-                        appendPos3List(&carvedCanyonList, tempList.pos3s[k]);
-                        if (canyonCarverType == 1) {
-                            appendPos3List(&waterCanyons, tempList.pos3s[k]);
-                        }
+                    carveCanyon(seed, mc, cx >> 4, cz >> 4, canyonCarverConfig, canyonCarverType, (int (*)[17]) cache, &tempList);
+
+                    for (int i = 0; i < tempList.size; i++) {
+                        appendPos3List(&carvedCanyonList, tempList.pos3s[i]);
+                        if (canyonCarverType == 1) appendPos3List(&waterCanyons, tempList.pos3s[i]);
                     }
 
                     freePos3List(&tempList);
                 }
 
-                if (p->bb0.x == 254 && p->bb0.y == 27 && p->bb0.z == 46) {
-                    for (int i = 0; i < waterCaves.size; i++) {
-                        Pos3 pos = waterCaves.pos3s[i];
-                    }
-                    for (int i = 0; i < waterCanyons.size; i++) {
-                        Pos3 pos = waterCanyons.pos3s[i];
-                    }
-                }
+                free(cache);
+
                 for (int i = 0; i < waterCaves.size; i++) {
                     Pos3 pos = waterCaves.pos3s[i];
                     if (pos.x >= p->bb0.x - 1 && pos.x <= p->bb1.x + 1 &&
