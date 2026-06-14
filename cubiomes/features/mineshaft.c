@@ -397,6 +397,7 @@ static void maybePlaceCobWeb(Piece *p, int cx, int cz, RandomSource rnd, int x, 
 
 int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig ssconf, int mc, uint64_t seed, int chunkX, int chunkZ) {
     int count = getMineshaftPieces(g, list, n, mc, seed, chunkX, chunkZ);
+    int msDebug = (chunkX == 17 && chunkZ == 6);
 
     const int legacy = mc <= MC_1_17;
     int minX = list->bb0.x;
@@ -450,8 +451,26 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                     if (pos.x >= p->bb0.x - 1 && pos.x <= p->bb1.x + 1 &&
                         pos.y >= p->bb0.y - 1 && pos.y <= p->bb1.y + 1 &&
                         pos.z >= p->bb0.z - 1 && pos.z <= p->bb1.z + 1) {
+                        if (msDebug && ((p->bb0.x == 254 && p->bb0.z == 61) || (p->bb0.x == 257 && p->bb0.z == 54)))
+                            printf("DBG_WATER_HIT piece=%d %d %d->%d %d %d trigger=%d %d %d chunk=%d %d\n",
+                                   p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z,
+                                   pos.x, pos.y, pos.z, cx >> 4, cz >> 4);
                         touchesWater = 1;
                         break;
+                    }
+                }
+
+                if (msDebug && !touchesWater &&
+                    ((p->bb0.x == 254 && p->bb0.z == 61) || (p->bb0.x == 257 && p->bb0.z == 54))) {
+                    printf("DBG_FN_NEAR piece=%d %d %d->%d %d %d chunk=%d %d waterCarvers=%d\n",
+                           p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z,
+                           cx >> 4, cz >> 4, waterCarvers.size);
+                    for (int _i = 0; _i < waterCarvers.size; _i++) {
+                        Pos3 pos = waterCarvers.pos3s[_i];
+                        if (pos.x >= p->bb0.x - 6 && pos.x <= p->bb1.x + 6 &&
+                            pos.y >= p->bb0.y - 6 && pos.y <= p->bb1.y + 6 &&
+                            pos.z >= p->bb0.z - 6 && pos.z <= p->bb1.z + 6)
+                            printf("  nearby=%d %d %d\n", pos.x, pos.y, pos.z);
                     }
                 }
 
@@ -489,7 +508,9 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                         maybePlaceCobWeb(p, cx, cz, rnd, 0, z + 2);
                         maybePlaceCobWeb(p, cx, cz, rnd, 2, z + 2);
 
-                        if (rnd.nextInt(rnd.state, 100) == 0) {
+                        int roll1 = rnd.nextInt(rnd.state, 100);
+                        if (msDebug) printf("CHEST_ROLL_C %d %d %d %d %d %d sec=%d roll1=%d\n", p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z, section, roll1);
+                        if (roll1 == 0) {
                             int chestPosX = 2, chestPosZ = z - 1;
                             rotPos(p->bb0, p->bb1, &chestPosX, &chestPosZ, p->rot);
                             if (chestPosX >= cx && chestPosX < cx + 16 && chestPosZ >= cz && chestPosZ < cz + 16) {
@@ -501,7 +522,9 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                             }
                         }
 
-                        if (rnd.nextInt(rnd.state, 100) == 0) {
+                        int roll2 = rnd.nextInt(rnd.state, 100);
+                        if (msDebug) printf("CHEST_ROLL_C %d %d %d %d %d %d sec=%d roll2=%d\n", p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z, section, roll2);
+                        if (roll2 == 0) {
                             int chestPosX = 0, chestPosZ = z + 1;
                             rotPos(p->bb0, p->bb1, &chestPosX, &chestPosZ, p->rot);
                             if (chestPosX >= cx && chestPosX < cx + 16 && chestPosZ >= cz && chestPosZ < cz + 16) {
