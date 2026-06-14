@@ -28,7 +28,9 @@ set(HEADERS
 	util.h
 	quadbase.h
 	xrms.h
+	features/piece.h
 	features/stronghold.h
+	features/mineshaft.h
 	loot/items.h
 	loot/logging.h
 	loot/loot_functions.h
@@ -94,9 +96,6 @@ set(HEADERS
 	loot/loot_tables/stronghold_library_1_13.h
 	loot/loot_tables/stronghold_library_1_20.h
 	loot/cjson/cJSON.h
-	features/mineshaft.h
-	features/piece.h
-	features/stronghold.h
 )
 set(SOURCES
 	finders.c
@@ -110,6 +109,7 @@ set(SOURCES
 	quadbase.c
 	xradv.c
 	features/stronghold.c
+	features/mineshaft.c
 	loot/items.c
 	loot/loot_functions.c
 	loot/loot_tables.c
@@ -173,8 +173,6 @@ set(SOURCES
 	loot/loot_tables/stronghold_library_1_13.c
 	loot/loot_tables/stronghold_library_1_20.c
 	loot/cjson/cJSON.c
-	features/mineshaft.c
-	features/stronghold.c
 )
 
 add_library(objects OBJECT ${SOURCES})

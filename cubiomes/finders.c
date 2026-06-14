@@ -399,7 +399,7 @@ int getStructureSaltConfig(int structureType, int mc, int biome, StructureSaltCo
             else if (biome == ocean) *ssconf = ss_ruined_portal_ocean_1194;
             else *ssconf = ss_ruined_portal_1194; // assuming biome != deep_dark
         }
-        return mc >= MC_1_16_1;   
+        return mc >= MC_1_16_1;
     case Stronghold:
         if (mc < MC_1_16_1) *ssconf = ss_stronghold_113;
         else if (mc < MC_1_19_2) *ssconf = ss_stronghold_116;
@@ -2691,6 +2691,72 @@ static void carveEllipsoid(int chunkX, int chunkZ, double x, double y, double z,
                 if (shouldSkip(relativeX, relativeY, relativeZ, absY, worldMinY, arg) || getCarveMask(carvingMask, relX, absY, relZ, worldMinY)) continue;
                 setCarveMask(carvingMask, relX, absY, relZ, worldMinY);
                 appendPos3List(poses, (Pos3) {absX, absY, absZ});
+            }
+        }
+    }
+}
+
+void applyAllCarvers(Generator *g, int chunkX, int chunkZ, Pos3List* poses, Pos3List* waterPoses) {
+    int worldHeight;
+    if (g->mc > MC_1_17_1) {
+        worldHeight = g->dim == DIM_OVERWORLD ? 384 : 128;
+    } else {
+        worldHeight = g->dim == DIM_OVERWORLD ? 256 : 128;
+    }
+    int slots = BITNSLOTS(256 * worldHeight);
+    char carvingMask[slots];
+    memset(carvingMask, 0, slots);
+
+    // TODO: replace with genBiomes?
+    int biomes[17][17];
+    for (int relChunkX = -8; relChunkX <= 8; ++relChunkX) {
+        for (int relChunkZ = -8; relChunkZ <= 8; ++relChunkZ) {
+            biomes[relChunkZ + 8][relChunkX + 8] = getBiomeAt(g, 4, relChunkX << 2, 0, relChunkZ << 2);
+        }
+    }
+
+    for (int relChunkX = -8; relChunkX <= 8; ++relChunkX) {
+        for (int relChunkZ = -8; relChunkZ <= 8; ++relChunkZ) {
+            int offsetChunkX = chunkX + relChunkX;
+            int offsetChunkZ = chunkZ + relChunkZ;
+            int biome = biomes[relChunkZ + 8][relChunkX + 8];
+
+            for (int canyonCarverType = 0; canyonCarverType < CANYON_CARVER_NUM; ++canyonCarverType) {
+                CanyonCarverConfig ccc;
+                if (!getCanyonCarverConfig(canyonCarverType, g->mc, &ccc)) {
+                    continue;
+                }
+                if (ccc.dim != g->dim) {
+                    continue;
+                }
+                if (!isViableCanyonBiome(canyonCarverType, biome)) {
+                    continue;
+                }
+                uint64_t rnd;
+                if (!checkCanyonStart(g->seed, offsetChunkX, offsetChunkZ, ccc, &rnd)) {
+                    continue;
+                }
+                if (canyonCarverType == UNDERWATER_CANYON_CARVER) carveCanyonInner(ccc, g->mc, &rnd, chunkX, chunkZ, offsetChunkX, offsetChunkZ, carvingMask, waterPoses);
+                else carveCanyonInner(ccc, g->mc, &rnd, chunkX, chunkZ, offsetChunkX, offsetChunkZ, carvingMask, poses);
+            }
+
+            for (int caveCarverType = 0; caveCarverType < CAVE_CARVER_NUM; ++caveCarverType) {
+                CaveCarverConfig ccc;
+                if (!getCaveCarverConfig(caveCarverType, g->mc, biome, &ccc)) {
+                    continue;
+                }
+                if (ccc.dim != g->dim) {
+                    continue;
+                }
+                if (!isViableCaveBiome(caveCarverType, biome)) {
+                    continue;
+                }
+                uint64_t rnd;
+                if (!checkCaveStart(g->seed, offsetChunkX, offsetChunkZ, ccc, &rnd)) {
+                    continue;
+                }
+                if (caveCarverType == OCEAN_CAVE_CARVER || caveCarverType == UNDERWATER_CAVE_CARVER) carveCaveInner(ccc, &rnd, chunkX, chunkZ, offsetChunkX, offsetChunkZ, g->mc, carvingMask, waterPoses);
+                else carveCaveInner(ccc, &rnd, chunkX, chunkZ, offsetChunkX, offsetChunkZ, g->mc, carvingMask, poses);
             }
         }
     }
@@ -7734,6 +7800,9 @@ static const int g_biome_para_range_21wd_diff[][13] = {
 {pale_garden             , -1500, 2000,  3000, IMAX,   300, IMAX, -7799,  500,  IMIN, IMAX,  2666, IMAX},
 {-1,0,0,0,0,0,0,0,0,0,0,0,0}};
 
+static const int g_biome_para_range_215_diff[][13] = {
+{pale_garden             , -1500, 2000,  3000, IMAX,   300, IMAX, -7799,  500,  IMIN, IMAX,  IMIN, IMAX},
+{-1,0,0,0,0,0,0,0,0,0,0,0,0}};
 
 /**
  * Gets the min/max parameter values within which a biome change can occur.
@@ -7772,6 +7841,14 @@ const int *getBiomeParaLimits(int mc, int id)
     if (mc <= MC_1_17)
         return NULL;
     int i;
+    if (mc > MC_1_21_4)
+    {
+        for (i = 0; g_biome_para_range_215_diff[i][0] != -1; i++)
+        {
+            if (g_biome_para_range_215_diff[i][0] == id)
+                return &g_biome_para_range_215_diff[i][1];
+        }
+    }
     if (mc > MC_1_21_3)
     {
         for (i = 0; g_biome_para_range_21wd_diff[i][0] != -1; i++)
@@ -7879,4 +7956,5 @@ int getLargestRec(int match, const int *ids, int sx, int sz, Pos *p0, Pos *p1)
     free(meta);
     return ret;
 }
+
 
