@@ -1,5 +1,6 @@
 #include "mineshaft.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "piece.h"
@@ -60,6 +61,7 @@ static void extendMineshaft(MineshaftPieceEnv *env, int x, int y, int z, int fac
             p->depth = depth;
             p->type = MS_CROSSING;
             p->next = NULL;
+            p->additionalData = 0;
             extendMineshaftPiece(env, p);
             return;
         }
@@ -82,6 +84,7 @@ static void extendMineshaft(MineshaftPieceEnv *env, int x, int y, int z, int fac
             p->depth = depth;
             p->type = MS_STAIRS;
             p->next = NULL;
+            p->additionalData = 0;
             extendMineshaftPiece(env, p);
             return;
         }
@@ -107,6 +110,7 @@ static void extendMineshaft(MineshaftPieceEnv *env, int x, int y, int z, int fac
                 p->depth = depth;
                 p->type = MS_CORRIDOR;
                 p->next = NULL;
+                p->additionalData = 0;
 
                 int hasRails = nextInt(env->rng, 3) == 0;
                 p->additionalData |= hasRails << 0;
@@ -324,6 +328,7 @@ int getMineshaftPieces(Generator *g, Piece *list, int n, int mc, uint64_t seed, 
     p->bb1.z += 7 + nextInt(&rng, 6);
     p->depth = 0;
     p->next = NULL;
+    p->additionalData = 0;
 
     extendMineshaftPiece(&env, p);
 
@@ -367,20 +372,37 @@ int getMineshaftPieces(Generator *g, Piece *list, int n, int mc, uint64_t seed, 
     return count;
 }
 
-static int isSupportingBox(Piece *p, int cx, int cz, int x0, int x1, int z0) {
+static int isFloorCarved(Piece *p, int wx, int wz, Pos3List *airCarvers) {
+    int floorY = p->bb0.y - 1;
+    for (int ai = 0; ai < airCarvers->size; ai++) {
+        Pos3 a = airCarvers->pos3s[ai];
+        if (a.x == wx && a.y == floorY && a.z == wz) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int isSupportingBox(Piece *p, int cx, int cz, int x0, int x1, int z0, Pos3List *airCarvers) {
+    int ceilY = p->bb0.y + 3;
     for (int x = x0; x <= x1; x++) {
         int tx = x, tz = z0;
         rotPos(p->bb0, p->bb1, &tx, &tz, p->rot);
         if (tx < cx || tx >= cx + 16 || tz < cz || tz >= cz + 16) {
             return 0;
         }
+        for (int ai = 0; ai < airCarvers->size; ai++) {
+            Pos3 a = airCarvers->pos3s[ai];
+            if (a.x == tx && a.y == ceilY && a.z == tz) {
+                return 0;
+            }
+        }
     }
-
     return 1;
 }
 
-static void placeSupport(Piece *p, int cx, int cz, int x0, int z, int x1, RandomSource rnd) {
-    if (isSupportingBox(p, cx, cz, x0, x1, z)) {
+static void placeSupport(Piece *p, int cx, int cz, int x0, int z, int x1, RandomSource rnd, Pos3List *airCarvers) {
+    if (isSupportingBox(p, cx, cz, x0, x1, z, airCarvers)) {
         if (rnd.nextInt(rnd.state, 4) != 0) {
             maybeGenerateBlock(rnd);
             maybeGenerateBlock(rnd);
@@ -397,7 +419,6 @@ static void maybePlaceCobWeb(Piece *p, int cx, int cz, RandomSource rnd, int x, 
 
 int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig ssconf, int mc, uint64_t seed, int chunkX, int chunkZ) {
     int count = getMineshaftPieces(g, list, n, mc, seed, chunkX, chunkZ);
-    int msDebug = (chunkX == 17 && chunkZ == 6);
 
     const int legacy = mc <= MC_1_17;
     int minX = list->bb0.x;
@@ -430,7 +451,6 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                       p->bb1.z >= cz && p->bb0.z <= cz + 15)) {
                     continue;
                 }
-
                 Pos3List airCarvers;
                 Pos3List waterCarvers;
                 int touchesWater = 0;
@@ -440,42 +460,17 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
 
                 applyAllCarvers(g, cx >> 4, cz >> 4, &airCarvers, &waterCarvers);
 
-                // for (int i = 0; i < waterCarvers.size; i++) { // Debug stuff
-                //     if (waterCarvers.pos3s[i].x == 250 && waterCarvers.pos3s[i].z == 56) {
-                //         printf("%d %d %d\n", waterCarvers.pos3s[i].x, waterCarvers.pos3s[i].y, waterCarvers.pos3s[i].z);
-                //     } 
-                // }
-
                 for (int i = 0; i < waterCarvers.size; i++) {
                     Pos3 pos = waterCarvers.pos3s[i];
                     if (pos.x >= p->bb0.x - 1 && pos.x <= p->bb1.x + 1 &&
                         pos.y >= p->bb0.y - 1 && pos.y <= p->bb1.y + 1 &&
                         pos.z >= p->bb0.z - 1 && pos.z <= p->bb1.z + 1) {
-                        if (msDebug && ((p->bb0.x == 254 && p->bb0.z == 61) || (p->bb0.x == 257 && p->bb0.z == 54)))
-                            printf("DBG_WATER_HIT piece=%d %d %d->%d %d %d trigger=%d %d %d chunk=%d %d\n",
-                                   p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z,
-                                   pos.x, pos.y, pos.z, cx >> 4, cz >> 4);
                         touchesWater = 1;
                         break;
                     }
                 }
 
-                if (msDebug && !touchesWater &&
-                    ((p->bb0.x == 254 && p->bb0.z == 61) || (p->bb0.x == 257 && p->bb0.z == 54))) {
-                    printf("DBG_FN_NEAR piece=%d %d %d->%d %d %d chunk=%d %d waterCarvers=%d\n",
-                           p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z,
-                           cx >> 4, cz >> 4, waterCarvers.size);
-                    for (int _i = 0; _i < waterCarvers.size; _i++) {
-                        Pos3 pos = waterCarvers.pos3s[_i];
-                        if (pos.x >= p->bb0.x - 6 && pos.x <= p->bb1.x + 6 &&
-                            pos.y >= p->bb0.y - 6 && pos.y <= p->bb1.y + 6 &&
-                            pos.z >= p->bb0.z - 6 && pos.z <= p->bb1.z + 6)
-                            printf("  nearby=%d %d %d\n", pos.x, pos.y, pos.z);
-                    }
-                }
-
                 if (touchesWater) {
-                    p->waterSkipped = 1;
                     freePos3List(&airCarvers);
                     freePos3List(&waterCarvers);
                     continue;
@@ -498,7 +493,7 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
 
                     for (int section = 0; section < numSections; section++) {
                         int z = 2 + section * 5;
-                        placeSupport(p, cx, cz, 0, z, 2, rnd);
+                        placeSupport(p, cx, cz, 0, z, 2, rnd, &airCarvers);
                         maybePlaceCobWeb(p, cx, cz, rnd, 0, z - 1);
                         maybePlaceCobWeb(p, cx, cz, rnd, 2, z - 1);
                         maybePlaceCobWeb(p, cx, cz, rnd, 0, z + 1);
@@ -508,12 +503,11 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                         maybePlaceCobWeb(p, cx, cz, rnd, 0, z + 2);
                         maybePlaceCobWeb(p, cx, cz, rnd, 2, z + 2);
 
-                        int roll1 = rnd.nextInt(rnd.state, 100);
-                        if (msDebug) printf("CHEST_ROLL_C %d %d %d %d %d %d sec=%d roll1=%d\n", p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z, section, roll1);
-                        if (roll1 == 0) {
+                        if (rnd.nextInt(rnd.state, 100) == 0) {
                             int chestPosX = 2, chestPosZ = z - 1;
                             rotPos(p->bb0, p->bb1, &chestPosX, &chestPosZ, p->rot);
-                            if (chestPosX >= cx && chestPosX < cx + 16 && chestPosZ >= cz && chestPosZ < cz + 16) {
+                            if (chestPosX >= cx && chestPosX < cx + 16 && chestPosZ >= cz && chestPosZ < cz + 16 &&
+                                !isFloorCarved(p, chestPosX, chestPosZ, &airCarvers)) {
                                 rnd.nextBoolean(rnd.state);
                                 p->chestPoses[p->chestCount] = (Pos) {chestPosX, chestPosZ};
                                 p->lootTables[p->chestCount] = "abandoned_mineshaft";
@@ -522,12 +516,11 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                             }
                         }
 
-                        int roll2 = rnd.nextInt(rnd.state, 100);
-                        if (msDebug) printf("CHEST_ROLL_C %d %d %d %d %d %d sec=%d roll2=%d\n", p->bb0.x, p->bb0.y, p->bb0.z, p->bb1.x, p->bb1.y, p->bb1.z, section, roll2);
-                        if (roll2 == 0) {
+                        if (rnd.nextInt(rnd.state, 100) == 0) {
                             int chestPosX = 0, chestPosZ = z + 1;
                             rotPos(p->bb0, p->bb1, &chestPosX, &chestPosZ, p->rot);
-                            if (chestPosX >= cx && chestPosX < cx + 16 && chestPosZ >= cz && chestPosZ < cz + 16) {
+                            if (chestPosX >= cx && chestPosX < cx + 16 && chestPosZ >= cz && chestPosZ < cz + 16 &&
+                                !isFloorCarved(p, chestPosX, chestPosZ, &airCarvers)) {
                                 rnd.nextBoolean(rnd.state);
                                 p->chestPoses[p->chestCount] = (Pos) {chestPosX, chestPosZ};
                                 p->lootTables[p->chestCount] = "abandoned_mineshaft";
@@ -540,7 +533,8 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                         // spiderCorridor is 0b_X_, hasPlacedSpider is 0bX__
                         if (((p->additionalData >> 1) & 0b11) == 0b01) {
                             int newX = 1;
-                            int newZ = z - 1 + rnd.nextInt(rnd.state, 3);
+                            int spiderRoll = rnd.nextInt(rnd.state, 3);
+                            int newZ = z - 1 + spiderRoll;
                             rotPos(p->bb0, p->bb1, &newX, &newZ, p->rot);
                             if (newX >= cx && newX < cx + 16 && newZ >= cz && newZ < cz + 16) {
                                 p->additionalData |= 1 << 2;
@@ -548,14 +542,29 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                             }
                         }
                     }
-
+                    
                     // this.hasRails
                     if ((p->additionalData >> 0) & 1) {
+                        int railsCount = 0;
+                        int floorY = p->bb0.y - 1;
                         for (int zx = 0; zx <= length; zx++) {
                             int tx = 1, tz = zx;
                             rotPos(p->bb0, p->bb1, &tx, &tz, p->rot);
                             if (tx >= cx && tx < cx + 16 && tz >= cz && tz < cz + 16) {
-                                maybeGenerateBlock(rnd);
+                                // Java's floor planks loop places planks over carved-air floors
+                                // so the rails loop calls nextFloat for carved positions too.
+                                // Only skip if floor is water (water carver fills water, not planks).
+                                int isWater = 0;
+                                for (int wi = 0; wi < waterCarvers.size; wi++) {
+                                    Pos3 w = waterCarvers.pos3s[wi];
+                                    if (w.x == tx && w.y == floorY && w.z == tz) {
+                                        isWater = 1; break;
+                                    }
+                                }
+                                if (!isWater) {
+                                    maybeGenerateBlock(rnd);
+                                    railsCount++;
+                                }
                             }
                         }
                     }
