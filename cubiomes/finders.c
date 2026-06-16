@@ -22,6 +22,25 @@
 
 #define PI 3.14159265358979323846
 
+// Java's Mth.sin/cos use a 65536-entry float lookup table, not the math library.
+// Canyon carver path computation uses these, so we must match them exactly.
+static float MC_SIN_TABLE[65536];
+static int mc_sin_table_init = 0;
+
+static void mc_sin_init(void) {
+    for (int i = 0; i < 65536; i++)
+        MC_SIN_TABLE[i] = (float)sin(i * M_PI * 2.0 / 65536.0);
+    mc_sin_table_init = 1;
+}
+
+static inline float mc_sin(float angle) {
+    return MC_SIN_TABLE[(int)(angle * 10430.378f) & 65535];
+}
+
+static inline float mc_cos(float angle) {
+    return MC_SIN_TABLE[((int)(angle * 10430.378f) + 16384) & 65535];
+}
+
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
@@ -2498,15 +2517,15 @@ static void carveCanyonInner(CanyonCarverConfig ccc, int mc, uint64_t *rnd, int 
     float g = 0.0F;
 
     for (int branchIndex = 0; branchIndex < branchCount; branchIndex++) {
-        double horizontalRadius = 1.5 + sin(branchIndex * (float) PI / branchCount) * thickness;
+        double horizontalRadius = 1.5 + mc_sin(branchIndex * (float) PI / branchCount) * thickness;
         double verticalRadius = horizontalRadius * horizontalVerticalRatio;
         horizontalRadius *= ccc.horizontalRadiusFactor(rnd, ccc.minHorRadius, ccc.maxHorRadius);
         verticalRadius = updateVerticalRadius(ccc, rnd, verticalRadius, branchCount, branchIndex);
-        float h = cos(pitch);
-        float j = sin(pitch);
-        x += cos(yaw) * h;
+        float h = mc_cos(pitch);
+        float j = mc_sin(pitch);
+        x += mc_cos(yaw) * h;
         y += j;
-        z += sin(yaw) * h;
+        z += mc_sin(yaw) * h;
         pitch *= 0.7F;
         pitch += g * 0.05F;
         yaw += f * 0.05F;
@@ -2697,6 +2716,7 @@ static void carveEllipsoid(int chunkX, int chunkZ, double x, double y, double z,
 }
 
 void applyAllCarvers(Generator *g, int chunkX, int chunkZ, Pos3List* poses, Pos3List* waterPoses) {
+    if (!mc_sin_table_init) mc_sin_init();
     int worldHeight;
     if (g->mc > MC_1_17_1) {
         worldHeight = g->dim == DIM_OVERWORLD ? 384 : 128;
@@ -2715,12 +2735,14 @@ void applyAllCarvers(Generator *g, int chunkX, int chunkZ, Pos3List* poses, Pos3
         }
     }
 
+    int targetBiome = biomes[8][8];
+
     for (int relChunkX = -8; relChunkX <= 8; ++relChunkX) {
         for (int relChunkZ = -8; relChunkZ <= 8; ++relChunkZ) {
             int offsetChunkX = chunkX + relChunkX;
             int offsetChunkZ = chunkZ + relChunkZ;
-            int biome = biomes[relChunkZ + 8][relChunkX + 8];
 
+            int sourceBiome = biomes[relChunkZ + 8][relChunkX + 8];
             for (int canyonCarverType = 0; canyonCarverType < CANYON_CARVER_NUM; ++canyonCarverType) {
                 CanyonCarverConfig ccc;
                 if (!getCanyonCarverConfig(canyonCarverType, g->mc, &ccc)) {
@@ -2729,32 +2751,34 @@ void applyAllCarvers(Generator *g, int chunkX, int chunkZ, Pos3List* poses, Pos3
                 if (ccc.dim != g->dim) {
                     continue;
                 }
-                if (!isViableCanyonBiome(canyonCarverType, biome)) {
+                if (!isViableCanyonBiome(canyonCarverType, sourceBiome)) {
                     continue;
                 }
                 uint64_t rnd;
                 if (!checkCanyonStart(g->seed, offsetChunkX, offsetChunkZ, ccc, &rnd)) {
                     continue;
                 }
+                int prevWaterSize = waterPoses->size;
                 if (canyonCarverType == UNDERWATER_CANYON_CARVER) carveCanyonInner(ccc, g->mc, &rnd, chunkX, chunkZ, offsetChunkX, offsetChunkZ, carvingMask, waterPoses);
                 else carveCanyonInner(ccc, g->mc, &rnd, chunkX, chunkZ, offsetChunkX, offsetChunkZ, carvingMask, poses);
             }
 
             for (int caveCarverType = 0; caveCarverType < CAVE_CARVER_NUM; ++caveCarverType) {
                 CaveCarverConfig ccc;
-                if (!getCaveCarverConfig(caveCarverType, g->mc, biome, &ccc)) {
+                if (!getCaveCarverConfig(caveCarverType, g->mc, targetBiome, &ccc)) {
                     continue;
                 }
                 if (ccc.dim != g->dim) {
                     continue;
                 }
-                if (!isViableCaveBiome(caveCarverType, biome)) {
+                if (!isViableCaveBiome(caveCarverType, targetBiome)) {
                     continue;
                 }
                 uint64_t rnd;
                 if (!checkCaveStart(g->seed, offsetChunkX, offsetChunkZ, ccc, &rnd)) {
                     continue;
                 }
+                int prevWaterSize2 = waterPoses->size;
                 if (caveCarverType == OCEAN_CAVE_CARVER || caveCarverType == UNDERWATER_CAVE_CARVER) carveCaveInner(ccc, &rnd, chunkX, chunkZ, offsetChunkX, offsetChunkZ, g->mc, carvingMask, waterPoses);
                 else carveCaveInner(ccc, &rnd, chunkX, chunkZ, offsetChunkX, offsetChunkZ, g->mc, carvingMask, poses);
             }
