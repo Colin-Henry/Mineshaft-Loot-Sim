@@ -417,7 +417,34 @@ static void maybePlaceCobWeb(Piece *p, int cx, int cz, RandomSource rnd, int x, 
     }
 }
 
-int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig ssconf, int mc, uint64_t seed, int chunkX, int chunkZ) {
+int msCouldBeNaturalWater(const Generator *g, int x, int y, int z) // tried to optimize via preliminary check
+{
+    if (y >= 63 || y < 0)
+        return 0;
+
+    int id = getBiomeAt(g, 4, x >> 2, 0, z >> 2);
+    double depth, scale;
+    getBiomeDepthAndScale(id, &depth, &scale, 0);
+
+    scale = scale * 0.9 + 0.1;
+    depth = (depth * 4.0 - 1) / 8;
+    scale = 96 / scale;
+    depth = depth * 17. / 64;
+
+    int py = y >> 3;
+    double worstCaseDensity = 1e300;
+    int k;
+    for (k = 0; k <= 1; k++) {
+        double fall = 1 - 2 * (py + k) / 32.0 + (-2.0 * 17./64 / 28.) - 0.46875;
+        fall = scale * (fall + depth);
+        double density = (fall > 0 ? 4*fall : fall) - 8.0;
+        if (density < worstCaseDensity)
+            worstCaseDensity = density;
+    }
+    return worstCaseDensity <= 0;
+}
+
+int getMineshaftLoot(Generator *g, SurfaceNoise *sn, Piece *list, int n, StructureSaltConfig ssconf, int mc, uint64_t seed, int chunkX, int chunkZ) {
     int count = getMineshaftPieces(g, list, n, mc, seed, chunkX, chunkZ);
 
     const int legacy = mc <= MC_1_17;
@@ -434,31 +461,80 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
 
         p->chestCount = 0;
     }
-    int cMinX = minX & ~15;
-    int cMinZ = minZ & ~15;
-    int cMaxX = maxX & ~15;
-    int cMaxZ = maxZ & ~15;
+    int cMinX = (minX - 1) & ~15;
+    int cMinZ = (minZ - 1) & ~15;
+    int cMaxX = (maxX + 1) & ~15;
+    int cMaxZ = (maxZ + 1) & ~15;
+
+    // added sorting by squared distance from origin chunk. otherwise it was not at all accurate for some reason
+    // TODO come up with a better fix than this
+    int maxChunks = ((cMaxX - cMinX) / 16 + 1) * ((cMaxZ - cMinZ) / 16 + 1);
+    int *chunkXs = (int*)malloc(maxChunks * sizeof(int));
+    int *chunkZs = (int*)malloc(maxChunks * sizeof(int));
+    int nchunks = 0;
+    for (int cx = cMinX; cx <= cMaxX; cx += 16)
+        for (int cz = cMinZ; cz <= cMaxZ; cz += 16) {
+            chunkXs[nchunks] = cx;
+            chunkZs[nchunks] = cz;
+            nchunks++;
+        }
+    for (int a = 1; a < nchunks; a++) {
+        int keyX = chunkXs[a], keyZ = chunkZs[a];
+        int kdx = (keyX >> 4) - chunkX, kdz = (keyZ >> 4) - chunkZ;
+        int kd = kdx*kdx + kdz*kdz;
+        int b = a - 1;
+        while (b >= 0) {
+            int bdx = (chunkXs[b] >> 4) - chunkX, bdz = (chunkZs[b] >> 4) - chunkZ;
+            if (bdx*bdx + bdz*bdz <= kd) break;
+            chunkXs[b+1] = chunkXs[b];
+            chunkZs[b+1] = chunkZs[b];
+            b--;
+        }
+        chunkXs[b+1] = keyX;
+        chunkZs[b+1] = keyZ;
+    }
+    int *removed = (int*)calloc(count, sizeof(int));
 
     // slow code ahead
-    for (int cx = cMinX; cx <= cMaxX; cx += 16) {
-        for (int cz = cMinZ; cz <= cMaxZ; cz += 16) {
-            CREATE_RANDOM_SOURCE(rnd, legacy);
-            uint64_t populationSeed = getPopulationSeed(mc, seed, cx, cz);
-            rnd.setSeed(rnd.state, populationSeed + ssconf.generationStep * 10000 + ssconf.decoratorIndex);
-            for (int i = 0; i < count; ++i) {
-                Piece *p = &list[i];
-                if (!(p->bb1.x >= cx && p->bb0.x <= cx + 15 &&
-                      p->bb1.z >= cz && p->bb0.z <= cz + 15)) {
-                    continue;
-                }
-                Pos3List airCarvers;
-                Pos3List waterCarvers;
+    for (int ci = 0; ci < nchunks; ci++) {
+        int cx = chunkXs[ci], cz = chunkZs[ci];
+        CREATE_RANDOM_SOURCE(rnd, legacy);
+        uint64_t populationSeed = getPopulationSeed(mc, seed, cx, cz);
+        rnd.setSeed(rnd.state, populationSeed + ssconf.generationStep * 10000 + ssconf.decoratorIndex);
+
+        Pos3List airCarvers;
+        Pos3List waterCarvers;
+        createPos3List(&airCarvers, 1);
+        createPos3List(&waterCarvers, 1);
+        applyAllCarvers(g, cx >> 4, cz >> 4, &airCarvers, &waterCarvers);
+
+        for (int i = 0; i < count; ++i) {
+            Piece *p = &list[i];
+            if (removed[i]) continue;
+            if (!(p->bb1.x >= cx && p->bb0.x <= cx + 15 &&
+                  p->bb1.z >= cz && p->bb0.z <= cz + 15)) {
+                continue;
+            }
                 int touchesWater = 0;
 
-                createPos3List(&airCarvers, 1);
-                createPos3List(&waterCarvers, 1);
-
-                applyAllCarvers(g, cx >> 4, cz >> 4, &airCarvers, &waterCarvers);
+                int sx0 = p->bb0.x - 1, sx1 = p->bb1.x + 1;
+                int sy0 = p->bb0.y - 1, sy1 = p->bb1.y + 1;
+                int sz0 = p->bb0.z - 1, sz1 = p->bb1.z + 1;
+                for (int x = sx0; x <= sx1 && !touchesWater; x++)
+                    for (int z = sz0; z <= sz1 && !touchesWater; z++) {
+                        if (msCouldBeNaturalWater(g, x, sy0, z) && isNaturalWater(g, sn,x, sy0, z)) touchesWater = 1;
+                        else if (msCouldBeNaturalWater(g, x, sy1, z) && isNaturalWater(g, sn,x, sy1, z)) touchesWater = 1;
+                    }
+                for (int x = sx0; x <= sx1 && !touchesWater; x++)
+                    for (int y = sy0; y <= sy1 && !touchesWater; y++) {
+                        if (msCouldBeNaturalWater(g, x, y, sz0) && isNaturalWater(g, sn,x, y, sz0)) touchesWater = 1;
+                        else if (msCouldBeNaturalWater(g, x, y, sz1) && isNaturalWater(g, sn,x, y, sz1)) touchesWater = 1;
+                    }
+                for (int z = sz0; z <= sz1 && !touchesWater; z++)
+                    for (int y = sy0; y <= sy1 && !touchesWater; y++) {
+                        if (msCouldBeNaturalWater(g, sx0, y, z) && isNaturalWater(g, sn,sx0, y, z)) touchesWater = 1;
+                        else if (msCouldBeNaturalWater(g, sx1, y, z) && isNaturalWater(g, sn,sx1, y, z)) touchesWater = 1;
+                    }
 
                 for (int i = 0; i < waterCarvers.size; i++) {
                     Pos3 pos = waterCarvers.pos3s[i];
@@ -471,11 +547,10 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                 }
 
                 if (touchesWater) {
-                    freePos3List(&airCarvers);
-                    freePos3List(&waterCarvers);
+                    removed[i] = 1;
                     continue;
                 }
-                
+
                 switch (p->type) {
                 case MS_CORRIDOR: {
                     // isInInvalidLocation ignored
@@ -551,9 +626,7 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                             int tx = 1, tz = zx;
                             rotPos(p->bb0, p->bb1, &tx, &tz, p->rot);
                             if (tx >= cx && tx < cx + 16 && tz >= cz && tz < cz + 16) {
-                                // Java's floor planks loop places planks over carved-air floors
-                                // so the rails loop calls nextFloat for carved positions too.
-                                // Only skip if floor is water (water carver fills water, not planks).
+                                // java has to place planks then rails but if theres water it wont place a plank so no rail
                                 int isWater = 0;
                                 for (int wi = 0; wi < waterCarvers.size; wi++) {
                                     Pos3 w = waterCarvers.pos3s[wi];
@@ -577,8 +650,12 @@ int getMineshaftLoot(Generator *g, Piece *list, int n, StructureSaltConfig sscon
                 default: UNREACHABLE();
                 }
             }
+        freePos3List(&airCarvers);
+        freePos3List(&waterCarvers);
         }
-    }
 
+    free(chunkXs);
+    free(chunkZs);
+    free(removed);
     return count;
 }
