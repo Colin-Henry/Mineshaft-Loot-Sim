@@ -417,12 +417,35 @@ static void maybePlaceCobWeb(Piece *p, int cx, int cz, RandomSource rnd, int x, 
     }
 }
 
-int msCouldBeNaturalWater(const Generator *g, int x, int y, int z) // tried to optimize via preliminary check
-{
+// cacheing (caching?) the last 4 biomes since biomes are 4:1 and getBiomeAt is expensive
+int msLookupBiome(Generator *g, int px, int pz) {
+    static uint64_t cacheSeed[4];
+    static int cachePx[4];
+    static int cachePz[4];
+    static int cacheId[4];
+    static int cacheValid[4];
+    static int cacheNext;
+
+    for (int i = 0; i < 4; i++) {
+        if (cacheValid[i] && cacheSeed[i] == g->seed && cachePx[i] == px && cachePz[i] == pz)
+            return cacheId[i];
+    }
+
+    int id = getBiomeAt(g, 4, px, 0, pz);
+    cacheSeed[cacheNext] = g->seed;
+    cachePx[cacheNext] = px;
+    cachePz[cacheNext] = pz;
+    cacheId[cacheNext] = id;
+    cacheValid[cacheNext] = 1;
+    cacheNext = (cacheNext + 1) % 4;
+    return id;
+}
+
+int msCouldBeNaturalWater(Generator *g, int x, int y, int z) { // tried to optimize via preliminary check
     if (y >= 63 || y < 0)
         return 0;
 
-    int id = getBiomeAt(g, 4, x >> 2, 0, z >> 2);
+    int id = msLookupBiome(g, x >> 2, z >> 2);
     double depth, scale;
     getBiomeDepthAndScale(id, &depth, &scale, 0);
 
