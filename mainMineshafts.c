@@ -10,6 +10,8 @@ int main()
     Generator g;
     setupGenerator(&g, mc, 0);
     applySeed(&g, DIM_OVERWORLD, seed);
+    SurfaceNoise sn;
+    initSurfaceNoise(&sn, DIM_OVERWORLD, seed);
     int max = 400;
     Piece *pieceList = malloc(400 * sizeof(Piece));
     StructureSaltConfig ssconf;
@@ -23,7 +25,7 @@ int main()
                 printf("Structure pos: %d %d\n", pos.x, pos.z);
                 
                 getStructureSaltConfig(Mineshaft, mc, getBiomeAt(&g, 4, pos.x, 64, pos.z), &ssconf);
-                int mineshaftPieceCount = getMineshaftLoot(&g, pieceList, max, ssconf, mc, seed, regX, regZ);
+                int mineshaftPieceCount = getMineshaftLoot(&g, &sn, pieceList, max, ssconf, mc, seed, regX, regZ);
 
                 for (int i = 0; i < mineshaftPieceCount; ++i) {
                     Piece *piece = &pieceList[i];
