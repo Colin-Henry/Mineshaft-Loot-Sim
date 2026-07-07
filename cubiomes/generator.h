@@ -137,6 +137,12 @@ int genArea(const Layer *layer, int *out, int areaX, int areaZ, int areaWidth, i
 int mapApproxHeight(float *y, int *ids, const Generator *g,
     const SurfaceNoise *sn, int x, int z, int w, int h);
 
+/*
+ * Tests if overworld block is below 0 density (water will spawn there)
+ * It is per-block and only supported for 1.9-1.17 (returns 0 for other versions)
+ * Takes initialized generator and surface noise. XYZ are block coordinates
+ */
+int isNaturalWater(const Generator *g, const SurfaceNoise *sn, int x, int y, int z);
 
 #ifdef __cplusplus
 }
